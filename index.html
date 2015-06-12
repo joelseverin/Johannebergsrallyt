@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="sv">
+    <head>
+        <meta charset="utf8">
+        <title>Johannebergsrallyt</title>
+        
+        <meta property="og:url" content="http://joelseverin.github.io/Johannebergsrallyt">
+        <meta property="og:image" content="http://joelseverin.github.io/Johannebergsrallyt/open-graph.png">
+        <meta property="og:title" content="Johannebergsrallyt">
+        <meta property="og:description" content="Ett racingspel på Campus Johanneberg.">
+        <meta property="og:locale" content="sv_SE">
+        <meta property="og:type" content="website">
+        
+        <style>
+            html, body, p, div, object, embed, form, canvas {
+                border: 0 none;
+                margin: 0;
+                padding: 0;
+            }
+
+            img, a img {
+                border: 0 none;
+            }
+            
+            body {
+                background-color: #000;
+                background-position: top center;
+                background-repeat: no-repeat;
+                background-size: cover;
+                background-attachment: fixed;
+                background-image: url(bg.png);
+                color: #fafafa;
+                font-family: Helvetica, Arial;
+                letter-spacing: 0.03em;
+            }
+            
+            a {
+                color: dodgerblue;
+                font-weight: 500;
+                text-decoration: none;
+            }
+            
+            #title {
+                color: #fafafa;
+                display: block;
+                margin: 50px 0 0 0;
+                font-size: 80px;
+                letter-spacing: 10px;
+                text-align: center;
+                background: rgba(80, 80, 80, 0.6);
+                text-shadow: -1px -1px 0 #FFFFFF, 1px -1px 0 #3b70ff, -1px 1px 0 #FF7F00, 1px 1px 0 #FFFFFF;
+                padding: 30px;
+            }
+            
+            #main {
+                padding: 50px;
+                display: block;
+                background: #fafafa;
+                width: 600px;
+                border: 1px solid #888888;
+                border-bottom: 0 none;
+                margin: 0 auto 0 auto;
+                color: #000;
+            }
+            
+            #main h2 {
+                margin: 30px 0 5px 0;
+            }
+            
+            #scene-wrapper canvas {
+                margin: 25px auto;
+                display: block;
+                cursor: move;
+            }
+            
+            .button {
+                padding: 30px;
+                background: #1E90FF;
+                border: 1px solid #1E90FF;
+                color: #fefefe;
+                margin: 35px 50px;
+                display: block;
+                font-weight: bold;
+                font-size: 1.5em;
+                text-align: center;
+            }
+            
+            .button:hover {
+                border: 1px solid #144f89;
+                color: #f0f0fe;
+            }
+        </style>
+        
+        <script src="three.min.js"></script>
+        <script src="three_orbit_controls.js"></script>
+        <script>
+            (function() {
+                var RallyScene = function(width, height, near, far, fov) {
+                    this.width = width;
+                    this.height = height;
+                    this.near = near;
+                    this.far = far;
+                    this.fov = fov;
+                    
+                    this.carColorState = new THREE.Color(0.1, 0.2, 0.3);
+                };
+
+                RallyScene.prototype.initialize = function() {
+                    this.scene = new THREE.Scene();
+                    
+                    this.camera = new THREE.PerspectiveCamera(this.fov, this.width/this.height, this.near, this.far);
+                    this.camera.position.z = 4;
+                    
+                    var controls = new THREE.OrbitControls(this.camera);
+                    controls.damping = 0.2;
+                    controls.noZoom = true;
+                    controls.noPan = true;
+                    
+                    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+                    this.renderer.setSize(this.width, this.height);
+                    this.renderer.gammaOutput = true;
+                    
+                    this.setupMaterials();
+                    this.setupLighting();
+                    
+                    return this.loadGeometry().then(function() {
+                        var renderFunction = this.render.bind(this);
+                        var renderLoop;
+                        renderLoop = function() {
+                            window.requestAnimationFrame(renderLoop);
+                            renderFunction();
+                        };
+                        renderLoop();
+                    }.bind(this));
+                };
+                
+                RallyScene.prototype.setupMaterials = function() {
+                    var cubeMap = THREE.ImageUtils.loadTextureCube([
+                        'posx.jpg', 'negx.jpg',
+                        'posy.jpg', 'negy.jpg',
+                        'posz.jpg', 'negz.jpg'
+                    ]);
+                    cubeMap.format = THREE.RGBFormat;
+                    
+                    // For phong: There is no per-material ambient term in Three.js,
+                    // and the diffuse term is called simply '.color'.
+                    this.materials = {
+                        // Car
+                        blackplastic: new THREE.MeshPhongMaterial({ color: 0x000000, specular: 0x1A1A1A, shininess: 12 }),
+                        lack: new THREE.MeshPhongMaterial({ color: 0x9999FF, specular: 0xFFFFFF, shininess: 126 }),
+                        carcolour: new THREE.MeshPhongMaterial({ color: 0xDF0000, specular: 0x990000, shininess: 126, envMap: cubeMap, reflectivity: 0.5 }),
+                        orangelamp: new THREE.MeshPhongMaterial({ color: 0xA30800, specular: 0x7F7F7F, shininess: 12.5, emissive: 0xFF0F00, envMap: cubeMap, reflectivity: 0.2 }),
+                        redlamp: new THREE.MeshPhongMaterial({ color: 0xCC0000, specular: 0x7F7F7F, shininess: 12.5, emissive: 0xFF0000 }),
+                        fonster: new THREE.MeshPhongMaterial({ color: 0x6666EE, specular: 0xFFFFFF, shininess: 126, envMap: cubeMap, reflectivity: 0.6 }),
+                        
+                        // Wheel
+                        rubber: new THREE.MeshPhongMaterial({ color: 0x000000, specular: 0x000000, shininess: 12.5 }),
+                        aluminium: new THREE.MeshPhongMaterial({ color: 0x282828, specular: 0xFFFFFF, shininess: 120, envMap: cubeMap, reflectivity: 0.5 })
+                    };
+                };
+                
+                RallyScene.prototype.loadGeometry = function() {
+                    return Promise.all([
+                        new MeshLoader(this.materials).load('cargt40.mesh.xml'),
+                        new MeshLoader(this.materials).load('hjul.mesh.xml')
+                    ]).then(function(meshes) {
+                        var bodyMesh = meshes[0];
+                        var wheelMesh = meshes[1];
+                        
+                        // (For some reason we need to clone the mesh,
+                        // as the transform applies to all wheels otherwise).
+                        
+                        this.frontLeftWheel = new THREE.Object3D();
+                        this.frontLeftWheel.add(wheelMesh.clone());
+                        this.frontLeftWheel.translateX(-0.7);
+                        this.frontLeftWheel.translateY(-0.5);
+                        this.frontLeftWheel.translateZ(1.5);
+                        
+                        this.frontRightWheel = new THREE.Object3D();
+                        this.frontRightWheel.add(wheelMesh.clone());
+                        this.frontRightWheel.translateX(0.7);
+                        this.frontRightWheel.translateY(-0.5);
+                        this.frontRightWheel.translateZ(1.5);
+                        
+                        this.backLeftWheel = new THREE.Object3D();
+                        this.backLeftWheel.add(wheelMesh.clone());
+                        this.backLeftWheel.translateX(-0.7);
+                        this.backLeftWheel.translateY(-0.5);
+                        this.backLeftWheel.translateZ(-1.25);
+                        
+                        this.backRightWheel = new THREE.Object3D();
+                        this.backRightWheel.add(wheelMesh.clone());
+                        this.backRightWheel.translateX(0.7);
+                        this.backRightWheel.translateY(-0.5);
+                        this.backRightWheel.translateZ(-1.25);
+                        
+                        this.car = new THREE.Object3D();
+                        this.car.add(bodyMesh);
+                        this.car.add(this.frontLeftWheel);
+                        this.car.add(this.frontRightWheel);
+                        this.car.add(this.backLeftWheel);
+                        this.car.add(this.backRightWheel);
+                        
+                        this.scene.add(this.car);
+                    }.bind(this)).catch(function(error) {
+                        console.log('Load geometry failed.');
+                        throw error;
+                    });
+                };
+                
+                RallyScene.prototype.setupLighting = function() {
+                    this.scene.add(new THREE.AmbientLight(0x111111));
+                    
+                    var directionalLight = new THREE.DirectionalLight(0x555555);
+                    directionalLight.position.set(-3, -1, 10).normalize();
+                    this.scene.add(directionalLight);
+                    
+                    var pointLight = new THREE.PointLight(0xAAAA66);
+                    pointLight.position.set(0, 10, 10);
+                    this.scene.add(pointLight);
+                };
+
+                RallyScene.prototype.render = function() {
+                    var step = 1.0/60.0;
+                    var now = new Date();
+                    if(this.oldFrameTime) {
+                        step = (new Date() - this.oldFrameTime) / 1000.0;
+                    }
+                    this.oldFrameTime = now;
+                    
+                    this.car.rotation.y += 0.7*step;
+                    
+                    this.frontLeftWheel.rotateX(2*step);
+                    this.frontRightWheel.rotateX(2*step);
+                    this.backLeftWheel.rotateX(2*step);
+                    this.backRightWheel.rotateX(2*step);
+                    
+                    var carColor = this.materials.carcolour.color;
+                    carColor.r += this.carColorState.r*step;
+                    carColor.g += this.carColorState.g*step;
+                    carColor.b += this.carColorState.b*step;
+                    if(carColor.r < 0 || carColor.r > 1.0) this.carColorState.r *= -1.0;
+                    if(carColor.g < 0 || carColor.g > 1.0) this.carColorState.g *= -1.0;
+                    if(carColor.b < 0 || carColor.b > 1.0) this.carColorState.b *= -1.0;
+                    
+                    this.renderer.render(this.scene, this.camera);
+                };
+                
+                RallyScene.prototype.getCanvas = function() {
+                    return this.renderer.domElement;
+                };
+                
+                var MeshLoader = function(materials) {
+                    this.materialCounter = 0;
+                    this.materialIds = {}; // We compute this on-the-fly depending of usage in the mesh
+                    this.materials = materials;
+                };
+                
+                MeshLoader.prototype.makeLoader = function(URI) {
+                    return new Promise(function(resolve, reject) {
+                        var request = new XMLHttpRequest();
+                        request.open('GET', URI);
+                        
+                        request.onload = function() {
+                            if(this.status == 200) {
+                                resolve(this.responseXML);
+                            } else {
+                                reject(Error("Error loading " + URI + ": " + this.status + " = " + this.statusText));
+                            }
+                        };
+                        request.onerror = function() {
+                            reject(Error("Error loading " + URI));
+                        };
+                        
+                        request.send();
+                    });
+                };
+                
+                MeshLoader.prototype.load = function(URI) {
+                    return this.makeLoader(URI).then(function(xml) {
+                        var geometry = new THREE.Geometry();
+                        
+                        var vertexBuffer = xml.getElementsByTagName('vertexbuffer')[0];
+                        //var hasTexcoords = vertexBuffer.attributes.getNamedItem('texcoords') === 'true';
+                        
+                        var normals = [];
+                        //var texcoords = [];
+                        
+                        // Load vertices. THREE.js expects to only get positions here.
+                        var vertices = vertexBuffer.children;
+                        for(var i = 0; i < vertices.length; i++) {
+                            var vertex = vertices[i];
+                            
+                            var position = vertex.getElementsByTagName('position')[0];
+                            geometry.vertices.push(new THREE.Vector3(
+                                parseFloat(position.attributes.getNamedItem('x').value),
+                                parseFloat(position.attributes.getNamedItem('y').value),
+                                parseFloat(position.attributes.getNamedItem('z').value)));
+                            
+                            var normal = vertex.getElementsByTagName('normal')[0];
+                            normals.push(new THREE.Vector3(
+                                parseFloat(normal.attributes.getNamedItem('x').value),
+                                parseFloat(normal.attributes.getNamedItem('y').value),
+                                parseFloat(normal.attributes.getNamedItem('z').value)));
+                            
+                            /*if(hasTexcoords) {
+                                var texcoord = vertex.getElementsByTagName('texcoord')[0];
+                                texcoords.push(new THREE.Vector2(
+                                    parseFloat(texcoord.getNamedItem('u')),
+                                    parseFloat(texcoord.getNamedItem('v'))));
+                            }*/
+                        }
+                        
+                        // This is the one that holds the submeshId-material mappings
+                        var meshFaceMaterial = new THREE.MeshFaceMaterial();
+                        
+                        // Load faces. Note that this includes normals from above
+                        // (specified per-face, seems stupid but it is how THREE.js does it).
+                        // We use the averaged normal for each face, all equally weighted.
+                        var subMeshes = xml.getElementsByTagName('submesh');
+                        for(var i = 0; i < subMeshes.length; i++) {
+                            var materialName = subMeshes[i].attributes.getNamedItem('material').value;
+                            var material = this.materials[materialName];
+                            var materialId = this.getMaterialId(materialName);
+                            
+                            meshFaceMaterial.materials[materialId] = material; // This could be overwritten (?)
+                            
+                            var faces = subMeshes[i].getElementsByTagName('face');
+                            for(var j = 0; j < faces.length; j++) {
+                                var face = faces[j];
+                                
+                                var firstVertex = parseInt(face.attributes.getNamedItem('v1').value);
+                                var secondVertex = parseInt(face.attributes.getNamedItem('v2').value);
+                                var thirdVertex = parseInt(face.attributes.getNamedItem('v3').value);
+                                
+                                var normal = normals[firstVertex].clone().add(normals[secondVertex]).add(normals[thirdVertex]);
+                                normal.normalize();
+                                
+                                geometry.faces.push(new THREE.Face3(
+                                    firstVertex,
+                                    secondVertex,
+                                    thirdVertex,
+                                    normal,
+                                    material.color, // diffuse (just use something)
+                                    materialId
+                                ));
+                            }
+                        }
+                        
+                        // Need to mark the geometry as dirty, and (?) re-calculate bounds
+                        geometry.verticesNeedUpdate = true;
+                        geometry.elementsNeedUpdate = true;
+                        geometry.computeVertexNormals();
+                        geometry.computeBoundingBox();
+                        
+                        return new THREE.Mesh(geometry, meshFaceMaterial);
+                    }.bind(this));
+                };
+                
+                MeshLoader.prototype.getMaterialId = function(materialName) {
+                    if(!this.materialIds[materialName]) {
+                        this.materialIds[materialName] = this.materialCounter++;
+                    }
+                    return this.materialIds[materialName];
+                };
+                
+                document.addEventListener('DOMContentLoaded', function() {
+                    var scene = new RallyScene(600, 400, 0.5, 1000, 75);
+                    scene.initialize().then(function() {
+                        var sceneWrapper = document.getElementById("scene-wrapper");
+                        sceneWrapper.innerHTML = '';
+                        sceneWrapper.appendChild(scene.getCanvas());
+                    }).catch(function(error) {
+                        console.dir(error);
+                    });
+                }, false);
+            })();
+        </script>
+    </head>
+    <body>
+        <h1 id="title">Johannebergsrallyt</h1>
+        <div id="scene-wrapper">&nbsp;</div>
+        <section id="main">
+            <p>
+                <img src="overview.png" alt="Översikt över spelet">
+                <br><br>
+                Johannebergsrallyt är ett nätverksbaserat 3D-spel som går ut på att race:a runt Chalmers Campus Johanneberg.
+                Själva spelet är en del av ett kandidatarbete på just Chalmers Tekniska Högskola. Källkoden är släppt under MIT-licensen (<a href="https://github.com/Kirtez/Rally">finns på GitHub</a>).
+                Vad vi testat funkar programmet på Windows 7/8 och Ubuntu 14.04 (men det kan tänkas fungera på andra OS också).
+                Färdigkompilerad exekverbar fil för Windows (x86_64):
+                <a href="rally.zip" class="button">Ladda ner senaste versionen</a>
+            </p>
+            
+            <h2>Hjälp! Felmeddelande om vc-redist-dll-något!</h2>
+            <p>Bara lugn, du behöver ladda ner <a href="http://www.microsoft.com/en-US/download/details.aspx?id=30679">VC++ 2012 Redistributable från Microsoft</a>.</p>
+            
+            <h2>Svart skärm, konstiga färger, krasch etc.</h2>
+            <p>
+                Om spelet inte skulle fungera kan det bero på att du försöker köra det på en riktigt gammal dator,
+                eller också har du inte laddat ner <a href="http://www.nvidia.com/Download/index.aspx">senaste drivrutinen till ditt grafikkort</a>.
+                Det kan också vara så enkelt som att du behöver installera <a href="http://www.microsoft.com/en-US/download/details.aspx?id=30679">VC++ 2012 Redistributable från Microsoft</a>, se ovan.
+            </p>
+            
+            <h2>Credits</h2>
+            <p>
+                Vi som gjort spelet är:
+                <ul>
+                    <li>Sofia Edström</li>
+                    <li>Erik Fägerlind</li>
+                    <li>Erik Lundholm</li>
+                    <li>Victor Sandell</li>
+                    <li>Joel Severin</li>
+                </ul>
+            </p>
+        </section>
+    </body>
+</html>
